@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>View Secret - GhostPass</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>GhostPass</h1>
+            <p>Secure Secret Sharing</p>
+        </header>
+
+        <nav>
+            <a href="/">Create Secret</a>
+            <a href="/about.html">About</a>
+        </nav>
+
+        <div class="card">
+            <div id="loading-section">
+                <h2>Retrieving Secret...</h2>
+                <div class="spinner" style="width: 40px; height: 40px;"></div>
+            </div>
+
+            <div id="error-section" class="hidden">
+                <div class="alert alert-error" id="error-message"></div>
+                <a href="/" class="btn">Create New Secret</a>
+            </div>
+
+            <div id="secret-section" class="hidden">
+                <h2>Secret Content</h2>
+                <div class="alert alert-warning">
+                    This secret will be destroyed after you view it. Copy it now!
+                </div>
+                
+                <div class="secret-content" id="secret-content"></div>
+                
+                <button class="btn" onclick="copySecret()">Copy to Clipboard</button>
+                <a href="/" class="btn btn-secondary">Create New Secret</a>
+            </div>
+
+            <div id="burned-section" class="hidden">
+                <div class="burn-notice">
+                    <div class="burn-animation">🔥</div>
+                    <h3>This Secret Has Been Destroyed</h3>
+                    <p style="color: #a0a0a0;">
+                        This secret has already been viewed or has expired.
+                        It is permanently deleted and cannot be recovered.
+                    </p>
+                    <a href="/" class="btn" style="margin-top: 2rem;">Create New Secret</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/crypto.js"></script>
+    <script>
+        async function loadSecret() {
+            const loadingSection = document.getElementById('loading-section');
+            const errorSection = document.getElementById('error-section');
+            const secretSection = document.getElementById('secret-section');
+            const burnedSection = document.getElementById('burned-section');
+
+            try {
+                // Extract ID from path and key from fragment
+                const pathParts = window.location.pathname.split('/');
+                const id = pathParts[pathParts.length - 1];
+                const keyBase64 = window.location.hash.slice(1); // Remove #
+
+                if (!id || !keyBase64) {
+                    throw new Error('Invalid secret link');
+                }
+
+                // Fetch encrypted secret
+                const response = await fetch(`/api/secrets/${id}`);
+                
+                if (response.status === 404) {
+                    throw new Error('SECRET_NOT_FOUND');
+                }
+                
+                if (response.status === 403) {
+                    throw new Error('Access denied - your IP is not allowed to view this secret');
+                }
+                
+                if (response.status === 410) {
+                    throw new Error('SECRET_BURNED');
+                }
+
+                if (!response.ok) {
+                    throw new Error('Failed to retrieve secret');
+                }
+
+                const data = await response.json();
+
+                // Decrypt
+                const key = CryptoUtils.base64ToArrayBuffer(keyBase64);
+                const ciphertext = CryptoUtils.base64ToArrayBuffer(data.ciphertext);
+                const iv = CryptoUtils.base64ToArrayBuffer(data.iv);
+
+                const plaintext = await CryptoUtils.decrypt(ciphertext, iv, key);
+
+                // Show secret
+                document.getElementById('secret-content').textContent = plaintext;
+                loadingSection.classList.add('hidden');
+                secretSection.classList.remove('hidden');
+
+            } catch (err) {
+                loadingSection.classList.add('hidden');
+                
+                if (err.message === 'SECRET_NOT_FOUND' || err.message === 'SECRET_BURNED') {
+                    burnedSection.classList.remove('hidden');
+                } else {
+                    document.getElementById('error-message').textContent = err.message;
+                    errorSection.classList.remove('hidden');
+                }
+            }
+        }
+
+        async function copySecret() {
+            const content = document.getElementById('secret-content').textContent;
+            await navigator.clipboard.writeText(content);
+            const btn = document.querySelector('#secret-section .btn');
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 3000);
+        }
+
+        // Load secret on page load
+        loadSecret();
+    </script>
+</body>
+</html>

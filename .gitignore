@@ -1,0 +1,5 @@
+core
+ghostpass
+*.db
+*.db-journal
+coverage.out

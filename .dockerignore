@@ -1,0 +1,9 @@
+*.db
+*.db-journal
+ghostpass
+.git
+.gitignore
+README.md
+.env
+*.pem
+*.key

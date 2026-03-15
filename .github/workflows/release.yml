@@ -1,0 +1,171 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: pheelee/ghostpass
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semver.outputs.next }}
+      tag: ${{ steps.semver.outputs.next }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Calculate next version
+        id: semver
+        uses: ietf-tools/semver-action@c90370b2958652d71c06a3484129a4d423a6d8a8 # v1.11.0
+        with:
+          token: ${{ github.token }}
+          branch: main
+          patchList: fix, bugfix, perf, refactor, test, tests, chore, ci, docs, style, build
+
+  build-and-push:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version: '1.26.1'
+
+      - name: Run tests with coverage
+        run: go test -v -coverprofile=coverage.out ./...
+
+      - name: Generate coverage report
+        run: go tool cover -func=coverage.out
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: true
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4.0.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.version.outputs.version }}
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  release:
+    needs: [version, build-and-push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            # First release - get all commits
+            COMMITS=$(git log --pretty=format:"%s" HEAD)
+          else
+            # Get commits since last tag
+            COMMITS=$(git log --pretty=format:"%s" ${PREV_TAG}..HEAD)
+          fi
+          
+          # Initialize sections
+          BREAKING=""
+          FEATURES=""
+          FIXES=""
+          OTHER=""
+          
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            
+            # Breaking changes
+            if echo "$line" | grep -qE "^\w+\!:|BREAKING CHANGE:" || echo "$line" | grep -qE "BREAKING CHANGE"; then
+              BREAKING="${BREAKING}- ${line}"$'\n'
+            # Features
+            elif echo "$line" | grep -qE "^feat(\([^)]+\))?:"; then
+              FEATURES="${FEATURES}- ${line}"$'\n'
+            # Fixes
+            elif echo "$line" | grep -qE "^fix(\([^)]+\))?:"; then
+              FIXES="${FIXES}- ${line}"$'\n'
+            # Other commits
+            else
+              OTHER="${OTHER}- ${line}"$'\n'
+            fi
+          done <<< "$COMMITS"
+          
+          # Build release notes
+          NOTES=""
+          
+          if [ -n "$BREAKING" ]; then
+            NOTES="${NOTES}## ⚠️ Breaking Changes"$'\n\n'"${BREAKING}"$'\n'
+          fi
+          
+          if [ -n "$FEATURES" ]; then
+            NOTES="${NOTES}## ✨ Features"$'\n\n'"${FEATURES}"$'\n'
+          fi
+          
+          if [ -n "$FIXES" ]; then
+            NOTES="${NOTES}## 🐛 Bug Fixes"$'\n\n'"${FIXES}"$'\n'
+          fi
+          
+          if [ -n "$OTHER" ]; then
+            NOTES="${NOTES}## 📝 Other Changes"$'\n\n'"${OTHER}"$'\n'
+          fi
+          
+          # Output for use in next step
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        run: |
+          gh release create ${{ needs.version.outputs.tag }} \
+            --title "${{ needs.version.outputs.tag }}" \
+            --notes-file - << 'EOF'
+          ${{ steps.notes.outputs.notes }}
+          EOF
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

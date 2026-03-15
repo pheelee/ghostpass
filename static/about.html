@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - GhostPass</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>GhostPass</h1>
+            <p>Secure Secret Sharing</p>
+        </header>
+
+        <nav>
+            <a href="/">Create Secret</a>
+            <a href="/about.html">About</a>
+        </nav>
+
+        <div class="card">
+            <h2>About GhostPass</h2>
+            <p style="color: #a0a0a0; margin-bottom: 1.5rem;">
+                GhostPass is a minimal, privacy-focused service for sharing sensitive information 
+                securely. It uses client-side encryption to ensure that your secrets remain private 
+                and are automatically destroyed after viewing.
+            </p>
+
+            <h3 style="color: #e94560; margin: 1.5rem 0 1rem 0;">Security Features</h3>
+            <ul style="color: #a0a0a0; margin-left: 1.5rem; margin-bottom: 1.5rem;">
+                <li><strong>Client-side encryption</strong> - Your secret is encrypted in your browser before being sent to the server</li>
+                <li><strong>AES-GCM encryption</strong> - Industry-standard encryption with a unique 256-bit key per secret</li>
+                <li><strong>Key in URL fragment</strong> - The encryption key is stored in the URL fragment (#) and never sent to the server</li>
+                <li><strong>One-time retrieval</strong> - Secrets are deleted immediately after being viewed</li>
+                <li><strong>Auto-expiry</strong> - Secrets automatically expire after the chosen time period</li>
+                <li><strong>IP restrictions</strong> - Optionally restrict access to specific IP ranges</li>
+                <li><strong>Rate limiting</strong> - Protection against brute force and abuse</li>
+                <li><strong>No logs</strong> - Minimal data retention with no logging of secret content</li>
+            </ul>
+
+            <h3 style="color: #e94560; margin: 1.5rem 0 1rem 0;">How the Encryption Works</h3>
+            <ol style="color: #a0a0a0; margin-left: 1.5rem; margin-bottom: 1.5rem;">
+                <li>When you create a secret, your browser generates a random 256-bit encryption key</li>
+                <li>The secret is encrypted using AES-GCM with a unique initialization vector</li>
+                <li>Only the encrypted data (ciphertext and IV) is sent to the server</li>
+                <li>The encryption key is encoded and added to the URL as a fragment (after #)</li>
+                <li>URL fragments are never sent to the server by browsers, keeping the key private</li>
+                <li>When the recipient opens the link, their browser extracts the key from the fragment</li>
+                <li>The encrypted data is fetched from the server and decrypted locally</li>
+                <li>After viewing, the secret is permanently deleted from the server</li>
+            </ol>
+
+            <h3 style="color: #e94560; margin: 1.5rem 0 1rem 0;">Data Stored on Server</h3>
+            <p style="color: #a0a0a0; margin-bottom: 1rem;">
+                The server only stores:
+            </p>
+            <ul style="color: #a0a0a0; margin-left: 1.5rem; margin-bottom: 1.5rem;">
+                <li>A random unique ID for the secret</li>
+                <li>The encrypted ciphertext (unreadable without the key)</li>
+                <li>The initialization vector (IV) for AES-GCM</li>
+                <li>Expiry timestamp</li>
+                <li>View count and maximum views allowed</li>
+                <li>Allowed CIDRs (if IP restriction is enabled)</li>
+            </ul>
+            <p style="color: #a0a0a0;">
+                The server <strong>never</strong> stores or sees:
+            </p>
+            <ul style="color: #a0a0a0; margin-left: 1.5rem;">
+                <li>The encryption key</li>
+                <li>The plaintext secret content</li>
+                <li>Any identifying information about the creator</li>
+            </ul>
+
+            <h3 style="color: #e94560; margin: 1.5rem 0 1rem 0;">Open Source</h3>
+            <p style="color: #a0a0a0;">
+                GhostPass is built with transparency in mind. The entire codebase is designed to be 
+                auditable and self-hostable. You can run your own instance to maintain complete 
+                control over your secrets.
+            </p>
+
+            <h3 style="color: #e94560; margin: 1.5rem 0 1rem 0;">Technical Stack</h3>
+            <ul style="color: #a0a0a0; margin-left: 1.5rem; margin-bottom: 1.5rem;">
+                <li><strong>Backend:</strong> Go with SQLite database</li>
+                <li><strong>Frontend:</strong> Vanilla HTML/JS (no external dependencies)</li>
+                <li><strong>Encryption:</strong> Web Crypto API (AES-GCM)</li>
+                <li><strong>Transport:</strong> HTTPS with security headers</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h3>Important Security Notes</h3>
+            <ul style="color: #a0a0a0; margin-left: 1.5rem;">
+                <li>Always share the secret link over a secure channel</li>
+                <li>Anyone with the full link (including the #key) can decrypt the secret</li>
+                <li>The secret is only as secure as the channel you use to share the link</li>
+                <li>Consider using end-to-end encrypted messaging for sharing links</li>
+                <li>Once viewed, the secret is permanently destroyed</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h3>Created by</h3>
+            <p style="color: #a0a0a0;">
+                GhostPass was created by <strong>Philipp Ritter</strong>.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

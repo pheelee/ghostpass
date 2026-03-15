@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostPass - Secure Secret Sharing</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>GhostPass</h1>
+            <p>Share secrets securely with one-time, self-destructing links</p>
+        </header>
+
+        <nav>
+            <a href="/">Create Secret</a>
+            <a href="/about.html">About</a>
+        </nav>
+
+        <div class="card">
+            <h2>Create a Secret</h2>
+            
+            <div id="error-message" class="alert alert-error hidden"></div>
+            
+            <form id="create-form">
+                <div class="form-group">
+                    <label for="secret-text">Secret Content</label>
+                    <textarea id="secret-text" placeholder="Enter your secret here..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="expiry">Expires After</label>
+                    <select id="expiry">
+                        <option value="3600">1 hour</option>
+                        <option value="86400" selected>24 hours</option>
+                        <option value="604800">7 days</option>
+                        <option value="2592000">30 days</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="max-views">Maximum Views</label>
+                    <input type="number" id="max-views" value="1" min="1" max="100">
+                    <p class="help-text">Set to 1 for burn-after-reading</p>
+                </div>
+
+                <div class="form-group">
+                    <label>IP Restrictions (Optional)</label>
+                    <div id="cidr-list">
+                        <input type="text" class="cidr-input" placeholder="e.g., 192.168.1.0/24">
+                    </div>
+                    <button type="button" class="add-btn" onclick="addCIDR()">+ Add IP Range</button>
+                    <p class="help-text">Restrict access to specific IP ranges (CIDR notation)</p>
+                </div>
+
+                <button type="submit" class="btn" id="submit-btn">
+                    Create Secret Link
+                </button>
+            </form>
+
+            <div id="result-section" class="hidden">
+                <div class="alert alert-success">
+                    Secret created successfully! Share this link:
+                </div>
+                
+                <div class="secret-link" id="secret-link"></div>
+                
+                <p class="help-text">
+                    This link contains the encryption key in the URL fragment. 
+                    The server never sees the key. Copy the entire link and share it securely.
+                </p>
+                
+                <button class="btn btn-secondary" onclick="copyLink()">Copy Link</button>
+                <button class="btn btn-secondary" onclick="resetForm()">Create Another</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>How it works</h3>
+            <ul style="color: #a0a0a0; margin-left: 1.5rem;">
+                <li>Your secret is encrypted in your browser using AES-GCM</li>
+                <li>The encryption key never leaves your browser (stored in URL fragment)</li>
+                <li>Only encrypted data is sent to the server</li>
+                <li>The secret self-destructs after being viewed (or expires)</li>
+                <li>The server never sees your plaintext</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/js/crypto.js"></script>
+    <script>
+        function addCIDR() {
+            const container = document.getElementById('cidr-list');
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'cidr-input';
+            input.placeholder = 'e.g., 192.168.1.0/24';
+            container.appendChild(input);
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        function hideError() {
+            document.getElementById('error-message').classList.add('hidden');
+        }
+
+        async function copyLink() {
+            const link = document.getElementById('secret-link').textContent;
+            await navigator.clipboard.writeText(link);
+            const btn = document.querySelector('#result-section .btn-secondary');
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 3000);
+        }
+
+        function resetForm() {
+            document.getElementById('create-form').reset();
+            document.getElementById('result-section').classList.add('hidden');
+            document.getElementById('create-form').classList.remove('hidden');
+            document.getElementById('cidr-list').innerHTML = '<input type="text" class="cidr-input" placeholder="e.g., 192.168.1.0/24">';
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Create Secret Link';
+            hideError();
+        }
+
+        document.getElementById('create-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError();
+
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span>Encrypting...';
+
+            try {
+                const plaintext = document.getElementById('secret-text').value;
+                if (!plaintext.trim()) {
+                    throw new Error('Please enter a secret');
+                }
+
+                // Generate key
+                const key = await CryptoUtils.generateKey();
+                
+                // Encrypt
+                const encrypted = await CryptoUtils.encrypt(plaintext, key);
+                
+                // Get CIDRs
+                const cidrInputs = document.querySelectorAll('.cidr-input');
+                const cidrs = Array.from(cidrInputs)
+                    .map(input => input.value.trim())
+                    .filter(value => value !== '');
+
+                // Prepare request
+                const request = {
+                    ciphertext: CryptoUtils.arrayBufferToBase64(encrypted.ciphertext),
+                    iv: CryptoUtils.arrayBufferToBase64(encrypted.iv),
+                    expires_in: parseInt(document.getElementById('expiry').value),
+                    max_views: parseInt(document.getElementById('max-views').value),
+                    allowed_cidrs: cidrs.length > 0 ? cidrs : undefined
+                };
+
+                // Send to server
+                const response = await fetch('/api/secrets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(request)
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error || 'Failed to create secret');
+                }
+
+                const result = await response.json();
+                
+                // Build link with key in fragment
+                const keyBase64 = CryptoUtils.arrayBufferToBase64(key);
+                const link = `${window.location.origin}/s/${result.id}#${keyBase64}`;
+                
+                // Show result
+                document.getElementById('secret-link').textContent = link;
+                document.getElementById('create-form').classList.add('hidden');
+                document.getElementById('result-section').classList.remove('hidden');
+
+            } catch (err) {
+                showError(err.message);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Create Secret Link';
+            }
+        });
+    </script>
+</body>
+</html>
