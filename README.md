@@ -261,4 +261,5 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ---
 
+
 **Note**: This is a security-focused application. Please review the [SECURITY.md](SECURITY.md) document for detailed security information and the [LICENSE](LICENSE) file for usage terms.
