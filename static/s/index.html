@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>View Secret - GhostPass</title>
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/style.css?v=3">
 </head>
 <body>
     <div class="container">
@@ -16,9 +16,23 @@
         <nav>
             <a href="/">Create Secret</a>
             <a href="/about.html">About</a>
+            <a href="https://github.com/pheelee/ghostpass" target="_blank" rel="noopener noreferrer" aria-label="GitHub Repository">
+                <svg height="20" width="20" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle;">
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                </svg>
+            </a>
         </nav>
 
         <div class="card">
+            <div id="password-section" class="hidden">
+                <h2>Password Required</h2>
+                <div class="form-group">
+                    <label for="secret-password">Enter Password</label>
+                    <input type="password" id="secret-password" placeholder="Enter password" required>
+                    <p class="help-text">This secret is password protected</p>
+                </div>
+                <button class="btn" id="view-btn" onclick="submitWithPassword()">View Secret</button>
+            </div>
             <div id="loading-section">
                 <h2>Retrieving Secret...</h2>
                 <div class="spinner" style="width: 40px; height: 40px;"></div>
@@ -58,32 +72,88 @@
     <script src="/js/crypto.js"></script>
     <script>
         async function loadSecret() {
-            const loadingSection = document.getElementById('loading-section');
-            const errorSection = document.getElementById('error-section');
-            const secretSection = document.getElementById('secret-section');
-            const burnedSection = document.getElementById('burned-section');
+            const pathParts = window.location.pathname.split('/');
+            const id = pathParts[pathParts.length - 1];
+            const keyBase64 = window.location.hash.slice(1);
 
+            const urlParams = new URLSearchParams(window.location.search);
+            const requiresPassword = urlParams.get('p') === '1';
+
+            if (!id || !keyBase64) {
+                showError('Invalid secret link');
+                return;
+            }
+
+            if (requiresPassword) {
+                // First check if the secret still exists before showing password prompt
+                try {
+                    const response = await fetch(`/api/secrets/${id}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({})
+                    });
+                    
+                    if (response.status === 404 || response.status === 410) {
+                        // Secret doesn't exist or already viewed
+                        document.getElementById('loading-section').classList.add('hidden');
+                        document.getElementById('burned-section').classList.remove('hidden');
+                        return;
+                    }
+                    
+                    // Secret exists, show password prompt
+                    document.getElementById('loading-section').classList.add('hidden');
+                    document.getElementById('password-section').classList.remove('hidden');
+                    window.pendingSecretId = id;
+                    window.pendingKeyBase64 = keyBase64;
+                } catch (err) {
+                    // Network error or other issue, show password prompt anyway
+                    document.getElementById('loading-section').classList.add('hidden');
+                    document.getElementById('password-section').classList.remove('hidden');
+                    window.pendingSecretId = id;
+                    window.pendingKeyBase64 = keyBase64;
+                }
+                return;
+            }
+
+            await fetchSecret(id, keyBase64, null);
+        }
+
+        async function submitWithPassword() {
+            const password = document.getElementById('secret-password').value;
+            if (!password) {
+                return;
+            }
+            await fetchSecret(window.pendingSecretId, window.pendingKeyBase64, password);
+        }
+
+        async function fetchSecret(id, keyBase64, password) {
             try {
-                // Extract ID from path and key from fragment
-                const pathParts = window.location.pathname.split('/');
-                const id = pathParts[pathParts.length - 1];
-                const keyBase64 = window.location.hash.slice(1); // Remove #
+                document.getElementById('loading-section').classList.add('hidden');
+                const fetchOptions = {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                };
 
-                if (!id || !keyBase64) {
-                    throw new Error('Invalid secret link');
+                if (password) {
+                    fetchOptions.body = JSON.stringify({ password: password });
+                } else {
+                    fetchOptions.body = JSON.stringify({});
                 }
 
-                // Fetch encrypted secret
-                const response = await fetch(`/api/secrets/${id}`);
-                
+                const response = await fetch(`/api/secrets/${id}`, fetchOptions);
+
+                if (response.status === 401) {
+                    throw new Error('Invalid or missing password');
+                }
+
                 if (response.status === 404) {
                     throw new Error('SECRET_NOT_FOUND');
                 }
-                
+
                 if (response.status === 403) {
                     throw new Error('Access denied - your IP is not allowed to view this secret');
                 }
-                
+
                 if (response.status === 410) {
                     throw new Error('SECRET_BURNED');
                 }
@@ -94,26 +164,34 @@
 
                 const data = await response.json();
 
-                // Decrypt
                 const key = CryptoUtils.base64ToArrayBuffer(keyBase64);
                 const ciphertext = CryptoUtils.base64ToArrayBuffer(data.ciphertext);
                 const iv = CryptoUtils.base64ToArrayBuffer(data.iv);
 
                 const plaintext = await CryptoUtils.decrypt(ciphertext, iv, key);
 
-                // Show secret
+                document.getElementById('password-section').classList.add('hidden');
+                document.getElementById('error-section').classList.add('hidden');
                 document.getElementById('secret-content').textContent = plaintext;
-                loadingSection.classList.add('hidden');
-                secretSection.classList.remove('hidden');
+                document.getElementById('secret-section').classList.remove('hidden');
 
             } catch (err) {
-                loadingSection.classList.add('hidden');
-                
+                // Don't hide password section on 401 so user can retry
+                if (err.message !== 'Invalid or missing password') {
+                    document.getElementById('password-section').classList.add('hidden');
+                }
+
                 if (err.message === 'SECRET_NOT_FOUND' || err.message === 'SECRET_BURNED') {
-                    burnedSection.classList.remove('hidden');
+                    document.getElementById('burned-section').classList.remove('hidden');
+                } else if (err.message === 'Invalid or missing password') {
+                    // Show error but keep password section visible for retry
+                    document.getElementById('error-message').textContent = err.message;
+                    document.getElementById('error-section').classList.remove('hidden');
+                    // Re-show password section for retry
+                    document.getElementById('password-section').classList.remove('hidden');
                 } else {
                     document.getElementById('error-message').textContent = err.message;
-                    errorSection.classList.remove('hidden');
+                    document.getElementById('error-section').classList.remove('hidden');
                 }
             }
         }
@@ -129,7 +207,6 @@
             }, 3000);
         }
 
-        // Load secret on page load
         loadSecret();
     </script>
 </body>

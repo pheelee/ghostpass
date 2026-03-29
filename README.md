@@ -11,6 +11,7 @@ A minimal, privacy-focused service for sharing sensitive text (passwords, tokens
 ## Features
 
 - **Client-side encryption**: AES-GCM encryption in the browser before sending to server
+- **Password protection**: Optional password authentication for secret retrieval
 - **One-time retrieval**: Secrets are deleted after first successful fetch
 - **Self-destructing**: Automatic expiration (1h, 24h, 7d, 30d options)
 - **IP restriction**: Optional CIDR-based access control
@@ -93,6 +94,7 @@ Create a new encrypted secret.
 - `expires_in` (optional): TTL in seconds (3600, 86400, 604800, 2592000). Defaults to 86400 (24h)
 - `max_views` (optional): Maximum number of views (1-100). Defaults to 1
 - `allowed_cidrs` (optional): Array of CIDR ranges allowed to access the secret
+- `password` (optional): Password for additional protection (min 8 characters)
 
 **Response:**
 ```json
@@ -102,9 +104,16 @@ Create a new encrypted secret.
 }
 ```
 
-### GET `/api/secrets/:id`
+### POST `/api/secrets/:id`
 
 Retrieve ciphertext for decryption.
+
+**Request:**
+```json
+{
+  "password": "optional_password_here"
+}
+```
 
 **Response:**
 ```json
@@ -116,6 +125,7 @@ Retrieve ciphertext for decryption.
 
 **Error Responses:**
 - `404 Not Found`: Secret doesn't exist or has expired
+- `401 Unauthorized`: Invalid or missing password (when password protection is enabled)
 - `410 Gone`: Secret has already been viewed (max views reached)
 - `403 Forbidden`: Client IP not in allowed CIDR ranges
 - `429 Too Many Requests`: Rate limit exceeded
@@ -130,10 +140,11 @@ Health check endpoint.
 ## How It Works
 
 1. **Encryption**: When creating a secret, the browser generates a random 256-bit key and encrypts the plaintext using AES-GCM
-2. **Storage**: Only the encrypted ciphertext and IV are sent to the server
+2. **Storage**: Only the encrypted ciphertext and IV are sent to the server (optional password is Argon2id hashed)
 3. **Key Storage**: The encryption key is appended to the URL as a fragment (`#key`), which browsers never send to the server
-4. **Retrieval**: When viewing a secret, the browser extracts the key from the URL fragment, fetches the encrypted data, and decrypts it locally
-5. **Destruction**: After viewing, the secret is permanently deleted from the server
+4. **Password Protection**: Optional password is hashed with Argon2id and verified on retrieval (in addition to the encryption key)
+5. **Retrieval**: When viewing a secret, the browser extracts the key from the URL fragment, fetches the encrypted data, and decrypts it locally
+6. **Destruction**: After viewing, the secret is permanently deleted from the server
 
 ## Environment Variables
 
