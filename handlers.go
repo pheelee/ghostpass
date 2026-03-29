@@ -63,9 +63,24 @@ func createSecretHandler(w http.ResponseWriter, r *http.Request) {
 		cidrsStr = string(cidrsBytes)
 	}
 
+	var passwordHash *string
+	if req.Password != "" {
+		if len(req.Password) < 8 {
+			http.Error(w, "Password must be at least 8 characters", http.StatusBadRequest)
+			return
+		}
+		hash, err := hashPassword(req.Password)
+		if err != nil {
+			logger.Error("password_hash_failed", err, nil)
+			http.Error(w, "Failed to process password", http.StatusInternalServerError)
+			return
+		}
+		passwordHash = &hash
+	}
+
 	_, err = db.Exec(
-		"INSERT INTO secrets (id, ciphertext, iv, expires_at, max_views, allowed_cidrs) VALUES (?, ?, ?, ?, ?, ?)",
-		id, req.Ciphertext, req.IV, expiresAt, req.MaxViews, cidrsStr,
+		"INSERT INTO secrets (id, ciphertext, iv, expires_at, max_views, allowed_cidrs, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, req.Ciphertext, req.IV, expiresAt, req.MaxViews, cidrsStr, passwordHash,
 	)
 	if err != nil {
 		logger.Error("secret_creation_failed", err, nil)
@@ -85,7 +100,7 @@ func createSecretHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getSecretHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -96,14 +111,25 @@ func getSecretHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var getReq GetSecretRequest
+	if err := json.NewDecoder(r.Body).Decode(&getReq); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
 	clientIP := getClientIP(r)
 
 	var secret Secret
 	var cidrsStr string
+	var passwordHash sql.NullString
 	err := db.QueryRow(
-		"SELECT id, ciphertext, iv, created_at, expires_at, views, max_views, allowed_cidrs FROM secrets WHERE id = ?",
+		"SELECT id, ciphertext, iv, created_at, expires_at, views, max_views, allowed_cidrs, password_hash FROM secrets WHERE id = ?",
 		id,
-	).Scan(&secret.ID, &secret.Ciphertext, &secret.IV, &secret.CreatedAt, &secret.ExpiresAt, &secret.Views, &secret.MaxViews, &cidrsStr)
+	).Scan(&secret.ID, &secret.Ciphertext, &secret.IV, &secret.CreatedAt, &secret.ExpiresAt, &secret.Views, &secret.MaxViews, &cidrsStr, &passwordHash)
+
+	if passwordHash.Valid {
+		secret.PasswordHash = &passwordHash.String
+	}
 
 	if err == sql.ErrNoRows {
 		LogSecretAccess(id, "retrieve", false, clientIP, nil)
@@ -137,6 +163,14 @@ func getSecretHandler(w http.ResponseWriter, r *http.Request) {
 		if !checkCIDR(clientIP, secret.AllowedCIDRs) {
 			LogSecretAccess(id, "retrieve_ip_denied", false, clientIP, nil)
 			http.Error(w, "Access denied from this IP", http.StatusForbidden)
+			return
+		}
+	}
+
+	if secret.PasswordHash != nil && *secret.PasswordHash != "" {
+		if getReq.Password == "" || !verifyPassword(getReq.Password, *secret.PasswordHash) {
+			LogSecretAccess(id, "retrieve_password_failed", false, clientIP, nil)
+			http.Error(w, "Invalid or missing password", http.StatusUnauthorized)
 			return
 		}
 	}

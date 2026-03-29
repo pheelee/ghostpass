@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"os"
 	"testing"
 	"time"
@@ -144,4 +145,71 @@ func TestCleanupExpiredSecretsWithTicker_CleanupError(t *testing.T) {
 
 	// Stop cleanup goroutine
 	close(done)
+}
+
+func TestNewDatabaseHasPasswordHashColumn(t *testing.T) {
+	initLogger()
+
+	dbPath := "./test_new_db_" + t.Name() + ".db"
+	defer os.Remove(dbPath)
+
+	if err := initDBWithPath(dbPath); err != nil {
+		t.Fatalf("Failed to init DB: %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('secrets') WHERE name='password_hash'").Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check column existence: %v", err)
+	}
+	if count != 1 {
+		t.Error("New database should have password_hash column")
+	}
+}
+
+func TestMigrationAddsPasswordHashColumn(t *testing.T) {
+	initLogger()
+
+	dbPath := "./test_migration_" + t.Name() + ".db"
+	defer os.Remove(dbPath)
+
+	sqlite, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+
+	oldSchema := `
+	CREATE TABLE IF NOT EXISTS secrets (
+		id TEXT PRIMARY KEY,
+		ciphertext TEXT NOT NULL,
+		iv TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		expires_at TIMESTAMP NOT NULL,
+		views INTEGER DEFAULT 0,
+		max_views INTEGER DEFAULT 1,
+		allowed_cidrs TEXT
+	);
+	CREATE INDEX IF NOT EXISTS idx_expires_at ON secrets(expires_at);
+	`
+	_, err = sqlite.Exec(oldSchema)
+	if err != nil {
+		sqlite.Close()
+		t.Fatalf("Failed to create old schema: %v", err)
+	}
+	sqlite.Close()
+
+	if err := initDBWithPath(dbPath); err != nil {
+		t.Fatalf("Failed to run migration: %v", err)
+	}
+	defer db.Close()
+
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('secrets') WHERE name='password_hash'").Scan(&count)
+	if err != nil {
+		t.Fatalf("Failed to check column existence after migration: %v", err)
+	}
+	if count != 1 {
+		t.Error("Migration should have added password_hash column")
+	}
 }
