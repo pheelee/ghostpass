@@ -66,6 +66,7 @@ label {
 
 input[type="text"],
 input[type="number"],
+input[type="password"],
 textarea,
 select {
     width: 100%;
@@ -79,6 +80,7 @@ select {
 }
 
 input:focus,
+input[type="password"]:focus,
 textarea:focus,
 select:focus {
     outline: none;
@@ -229,6 +231,15 @@ nav a {
 
 nav a:hover {
     color: #e94560;
+}
+
+nav a svg {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+nav a[href*="github.com"]:hover svg {
+    fill: #e94560;
 }
 
 .checkbox-group {

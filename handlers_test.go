@@ -43,8 +43,11 @@ func TestGetSecretHandler(t *testing.T) {
 	var createResp CreateSecretResponse
 	json.Unmarshal(rr.Body.Bytes(), &createResp)
 
-	// Test successful retrieval
-	req = httptest.NewRequest("GET", "/api/secrets/"+createResp.ID, nil)
+	// Test successful retrieval with POST
+	getReqBody := GetSecretRequest{}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -67,7 +70,10 @@ func TestGetSecretHandler_NotFound(t *testing.T) {
 	cleanup := setupTestDB(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/api/secrets/nonexistent", nil)
+	reqBody := GetSecretRequest{}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets/nonexistent", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -77,7 +83,7 @@ func TestGetSecretHandler_NotFound(t *testing.T) {
 }
 
 func TestGetSecretHandler_InvalidMethod(t *testing.T) {
-	req := httptest.NewRequest("POST", "/api/secrets/test-id", nil)
+	req := httptest.NewRequest("GET", "/api/secrets/test-id", nil)
 	rr := httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -87,7 +93,10 @@ func TestGetSecretHandler_InvalidMethod(t *testing.T) {
 }
 
 func TestGetSecretHandler_MissingID(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/secrets/", nil)
+	reqBody := GetSecretRequest{}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets/", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -120,7 +129,10 @@ func TestGetSecretHandler_IPRestriction(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &createResp)
 
 	// Try to access from different IP (should fail)
-	req = httptest.NewRequest("GET", "/api/secrets/"+createResp.ID, nil)
+	getReqBody := GetSecretRequest{}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "192.168.1.100:12345"
 	rr = httptest.NewRecorder()
 	getSecretHandler(rr, req)
@@ -153,7 +165,10 @@ func TestGetSecretHandler_MaxViews(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &createResp)
 
 	// First retrieval should work
-	req = httptest.NewRequest("GET", "/api/secrets/"+createResp.ID, nil)
+	getReqBody := GetSecretRequest{}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -162,7 +177,9 @@ func TestGetSecretHandler_MaxViews(t *testing.T) {
 	}
 
 	// Second retrieval should fail (secret deleted after max views)
-	req = httptest.NewRequest("GET", "/api/secrets/"+createResp.ID, nil)
+	getReqBytes, _ = json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
 	rr = httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -186,7 +203,10 @@ func TestGetSecretHandler_ExpiredSecret(t *testing.T) {
 		t.Fatalf("Failed to insert expired secret: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/secrets/"+id, nil)
+	reqBody := GetSecretRequest{}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets/"+id, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -244,7 +264,10 @@ func TestGetSecretHandler_WithAllowedIP(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &createResp)
 
 	// Try to access from allowed IP
-	req = httptest.NewRequest("GET", "/api/secrets/"+createResp.ID, nil)
+	getReqBody := GetSecretRequest{}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
 	req.RemoteAddr = "192.168.1.50:12345"
 	rr = httptest.NewRecorder()
 	getSecretHandler(rr, req)
@@ -485,7 +508,10 @@ func TestGetSecretHandler_DatabaseQueryError(t *testing.T) {
 	// Close database before query to simulate error
 	db.Close()
 
-	req := httptest.NewRequest("GET", "/api/secrets/"+id, nil)
+	reqBody := GetSecretRequest{}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets/"+id, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
@@ -509,11 +535,225 @@ func TestGetSecretHandler_AlreadyMaxViews(t *testing.T) {
 		t.Fatalf("Failed to insert secret: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/secrets/"+id, nil)
+	reqBody := GetSecretRequest{}
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets/"+id, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	getSecretHandler(rr, req)
 
 	if status := rr.Code; status != http.StatusGone {
 		t.Errorf("Expected status %v, got %v", http.StatusGone, status)
+	}
+}
+
+func TestCreateSecretHandler_WithPassword(t *testing.T) {
+	initLogger()
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	reqBody := CreateSecretRequest{
+		Ciphertext: "dGVzdC1jaXBoZXJ0ZXh0",
+		IV:         "dGVzdC1pdg==",
+		ExpiresIn:  3600,
+		MaxViews:   1,
+		Password:   "securepassword123",
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	createSecretHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("Expected status %v, got %v", http.StatusOK, status)
+	}
+
+	var resp CreateSecretResponse
+	json.Unmarshal(rr.Body.Bytes(), &resp)
+
+	if resp.ID == "" {
+		t.Error("Response ID is empty")
+	}
+
+	var passwordHash string
+	err := db.QueryRow("SELECT password_hash FROM secrets WHERE id = ?", resp.ID).Scan(&passwordHash)
+	if err != nil {
+		t.Fatalf("Failed to get password hash: %v", err)
+	}
+
+	if passwordHash == "" {
+		t.Error("Password hash should not be empty")
+	}
+}
+
+func TestCreateSecretHandler_PasswordTooShort(t *testing.T) {
+	initLogger()
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	reqBody := CreateSecretRequest{
+		Ciphertext: "dGVzdC1jaXBoZXJ0ZXh0",
+		IV:         "dGVzdC1pdg==",
+		ExpiresIn:  3600,
+		MaxViews:   1,
+		Password:   "short",
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	createSecretHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Errorf("Expected status %v, got %v", http.StatusBadRequest, status)
+	}
+}
+
+func TestGetSecretHandler_WithCorrectPassword(t *testing.T) {
+	initLogger()
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	reqBody := CreateSecretRequest{
+		Ciphertext: "dGVzdC1jaXBoZXJ0ZXh0",
+		IV:         "dGVzdC1pdg==",
+		ExpiresIn:  3600,
+		MaxViews:   2,
+		Password:   "securepassword123",
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	createSecretHandler(rr, req)
+
+	var createResp CreateSecretResponse
+	json.Unmarshal(rr.Body.Bytes(), &createResp)
+
+	getReqBody := GetSecretRequest{Password: "securepassword123"}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	getSecretHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("Expected status %v, got %v", http.StatusOK, status)
+	}
+
+	var resp GetSecretResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Errorf("Failed to parse response: %v", err)
+	}
+
+	if resp.Ciphertext != reqBody.Ciphertext {
+		t.Error("Ciphertext mismatch")
+	}
+}
+
+func TestGetSecretHandler_WithoutPasswordWhenRequired(t *testing.T) {
+	initLogger()
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	reqBody := CreateSecretRequest{
+		Ciphertext: "dGVzdC1jaXBoZXJ0ZXh0",
+		IV:         "dGVzdC1pdg==",
+		ExpiresIn:  3600,
+		MaxViews:   2,
+		Password:   "securepassword123",
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	createSecretHandler(rr, req)
+
+	var createResp CreateSecretResponse
+	json.Unmarshal(rr.Body.Bytes(), &createResp)
+
+	getReqBody := GetSecretRequest{}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	getSecretHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusUnauthorized {
+		t.Errorf("Expected status %v, got %v", http.StatusUnauthorized, status)
+	}
+}
+
+func TestGetSecretHandler_WithWrongPassword(t *testing.T) {
+	initLogger()
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	reqBody := CreateSecretRequest{
+		Ciphertext: "dGVzdC1jaXBoZXJ0ZXh0",
+		IV:         "dGVzdC1pdg==",
+		ExpiresIn:  3600,
+		MaxViews:   2,
+		Password:   "securepassword123",
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	createSecretHandler(rr, req)
+
+	var createResp CreateSecretResponse
+	json.Unmarshal(rr.Body.Bytes(), &createResp)
+
+	getReqBody := GetSecretRequest{Password: "wrongpassword"}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	getSecretHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusUnauthorized {
+		t.Errorf("Expected status %v, got %v", http.StatusUnauthorized, status)
+	}
+}
+
+func TestGetSecretHandler_WithoutPasswordWhenNotRequired(t *testing.T) {
+	initLogger()
+	cleanup := setupTestDB(t)
+	defer cleanup()
+
+	reqBody := CreateSecretRequest{
+		Ciphertext: "dGVzdC1jaXBoZXJ0ZXh0",
+		IV:         "dGVzdC1pdg==",
+		ExpiresIn:  3600,
+		MaxViews:   2,
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest("POST", "/api/secrets", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	createSecretHandler(rr, req)
+
+	var createResp CreateSecretResponse
+	json.Unmarshal(rr.Body.Bytes(), &createResp)
+
+	getReqBody := GetSecretRequest{}
+	getReqBytes, _ := json.Marshal(getReqBody)
+	req = httptest.NewRequest("POST", "/api/secrets/"+createResp.ID, bytes.NewReader(getReqBytes))
+	req.Header.Set("Content-Type", "application/json")
+	rr = httptest.NewRecorder()
+	getSecretHandler(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("Expected status %v, got %v", http.StatusOK, status)
 	}
 }

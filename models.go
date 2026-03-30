@@ -11,6 +11,12 @@ type CreateSecretRequest struct {
 	ExpiresIn    int      `json:"expires_in"`
 	MaxViews     int      `json:"max_views"`
 	AllowedCIDRs []string `json:"allowed_cidrs,omitempty"`
+	Password     string   `json:"password,omitempty"`
+}
+
+// GetSecretRequest represents a request to retrieve a secret
+type GetSecretRequest struct {
+	Password string `json:"password,omitempty"`
 }
 
 // CreateSecretResponse represents the response after creating a secret
@@ -35,4 +41,5 @@ type Secret struct {
 	Views        int
 	MaxViews     int
 	AllowedCIDRs []string
+	PasswordHash *string
 }

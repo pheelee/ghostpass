@@ -135,7 +135,17 @@ Cryptographic failures occur when data protection is not properly implemented, l
 
 ### Current Implementation
 
-**Strengths:**
+**Password Hashing:**
+- Argon2id with OWASP-recommended parameters (`password.go:13-20`)
+  - Time cost: 1
+  - Memory cost: 64 MB
+  - Parallelism: 4 threads
+  - Salt length: 16 bytes (random per hash)
+  - Key length: 32 bytes
+- Constant-time comparison to prevent timing attacks (`password.go:64`)
+- Separate salt for each password hash
+
+**Encryption:**
 - AES-GCM with 256-bit keys (industry standard)
 - 128-bit random IVs for each encryption
 - Proper key generation using `crypto.getRandomValues()` (CSPRNG)
@@ -145,6 +155,7 @@ Cryptographic failures occur when data protection is not properly implemented, l
 - GCM mode provides authenticated encryption (confidentiality + integrity)
 
 **Verified Implementations:**
+- Password hashing: `argon2.IDKey()` with secure parameters
 - Encryption: `crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, ...)` (`static/js/crypto.js:24-41`)
 - Decryption: Proper error handling for tampered data
 - Key generation: `crypto.getRandomValues(new Uint8Array(32))` (256-bit)
@@ -184,16 +195,18 @@ Insecure design is a broad category representing different weaknesses, expressed
 
 **Strengths:**
 - Zero-knowledge architecture (server never sees plaintext)
+- Optional password protection layer (Argon2id hashing)
 - One-time use design (secrets auto-delete)
 - TTL enforcement with automatic cleanup
 - Input validation on all endpoints (`handlers.go:33-45`)
 - Size limits enforced (max_views ≤ 100)
 - Allowed TTL whitelist (`main.go:17-22`, `handlers.go:47-49`)
-- Defense in depth (client + server encryption)
+- Defense in depth (client + server encryption + optional password)
 
 **Architecture Strengths:**
 - Client-side encryption means server compromise doesn't expose secrets
 - URL fragment storage means keys never hit server logs
+- Password protection provides additional layer even if URL is leaked
 - Ephemeral design minimizes data breach impact
 
 ### No Issues Found ✅
@@ -207,15 +220,22 @@ Authentication failures occur when application functions related to authenticati
 
 ### Current Implementation
 
-**Assessment:** This application intentionally has no user authentication system. Secrets are accessed via cryptographically random URLs.
+**Optional Password Protection:**
+- Argon2id password hashing (OWASP recommended algorithm)
+- Minimum 8-character password requirement
+- Constant-time comparison to prevent timing attacks
+- Same error message for missing/wrong password (prevents user enumeration)
+- Password check occurs after IP/CIDR validation (defense in depth)
+- Password hash stored separately from encrypted secret
+- No password recovery mechanism (by design - secrets are ephemeral)
 
-**Controls:**
+**URL-Based Access:**
 - High-entropy random IDs (128-bit) - effectively unguessable
 - Rate limiting prevents ID enumeration attacks
 - Time-bound and view-bound access control
 - No session management vulnerabilities (no sessions)
 
-### N/A by Design ✅
+### Controls Validated ✅
 
 ---
 
@@ -259,7 +279,8 @@ Security logging and alerting failures occur when security-relevant events are n
   - Request duration
   - Timestamp
 - **Security audit logging** (`logger.go:127-143`):
-  - Secret access attempts (create, retrieve, expired, denied)
+  - Secret access attempts (create, retrieve, expired, denied, password_failed)
+  - Password authentication failures (without logging the password)
   - Rate limit violations
   - IP-based access denials
   - All events include hashed secret IDs and client IPs

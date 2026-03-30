@@ -28,12 +28,27 @@ func initDBWithPath(path string) error {
 		expires_at TIMESTAMP NOT NULL,
 		views INTEGER DEFAULT 0,
 		max_views INTEGER DEFAULT 1,
-		allowed_cidrs TEXT
+		allowed_cidrs TEXT,
+		password_hash TEXT
 	);
 	CREATE INDEX IF NOT EXISTS idx_expires_at ON secrets(expires_at);
 	`
 
 	_, err = db.Exec(schema)
+	if err != nil {
+		return err
+	}
+
+	return migrateAddPasswordHash()
+}
+
+func migrateAddPasswordHash() error {
+	var columnExists int
+	err := db.QueryRow("SELECT 1 FROM pragma_table_info('secrets') WHERE name='password_hash'").Scan(&columnExists)
+	if err == nil && columnExists == 1 {
+		return nil
+	}
+	_, err = db.Exec("ALTER TABLE secrets ADD COLUMN password_hash TEXT")
 	return err
 }
 
