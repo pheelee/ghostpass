@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -90,7 +91,28 @@ func runServer(server *http.Server, quit chan os.Signal) error {
 	return server.Shutdown(ctx)
 }
 
+func checkHealth() error {
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + getPort() + "/healthz")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("health check returned status %s", resp.Status)
+	}
+	return nil
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthz" {
+		if err := checkHealth(); err != nil {
+			log.Printf("Health check failed: %v", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := initializeApp(); err != nil {
 		log.Fatalf("Failed to initialize application: %v", err)
 	}
